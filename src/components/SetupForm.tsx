@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import type { VideoConfig, SubtitleCue } from '../types';
+import { useEffect, useState } from 'react';
+import type { VideoConfig, SubtitleCue, RecentMovie } from '../types';
 import { fetchAvailableLanguages, fetchCaptions } from '../lib/captionApi';
 import { parseSRT } from '../lib/srtParser';
+import { getRecentMovies, saveRecentMovieSelection } from '../lib/storage';
 
 interface Props {
   onStart: (config: VideoConfig) => void;
@@ -21,6 +22,7 @@ export default function SetupForm({ onStart }: Props) {
   const [languages, setLanguages] = useState<LangOption[]>([]);
   const [sourceLang, setSourceLang] = useState('');
   const [targetLang, setTargetLang] = useState('');
+  const [recentMovies, setRecentMovies] = useState<RecentMovie[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -29,24 +31,72 @@ export default function SetupForm({ onStart }: Props) {
   const [sourceSrtFile, setSourceSrtFile] = useState<File | null>(null);
   const [targetSrtFile, setTargetSrtFile] = useState<File | null>(null);
 
-  async function handleFetchLanguages() {
-    if (!youtubeUrl.trim()) return;
+  function getDefaultLangs(langs: LangOption[]) {
+    // Prefer Italian for learning and English for translations when available.
+    const italian = langs.find((l) => l.lang.startsWith('it'));
+    const english = langs.find((l) => l.lang.startsWith('en'));
+
+    const preferredSource = italian?.lang || langs[0]?.lang || '';
+    const preferredTarget =
+      english?.lang || langs.find((l) => l.lang !== preferredSource)?.lang || preferredSource;
+
+    return { source: preferredSource, target: preferredTarget };
+  }
+
+  useEffect(() => {
+    void loadRecentMovies();
+  }, []);
+
+  async function loadRecentMovies() {
+    try {
+      setRecentMovies(await getRecentMovies(8));
+    } catch {
+      setRecentMovies([]);
+    }
+  }
+
+  async function fetchLanguagesForVideo(
+    rawUrl: string,
+    preferred?: { source: string; target: string }
+  ) {
+    const videoUrl = rawUrl.trim();
+    if (!videoUrl) return;
+
     setLoading(true);
     setError('');
     try {
-      const langs = await fetchAvailableLanguages(youtubeUrl);
+      const langs = await fetchAvailableLanguages(videoUrl);
       setLanguages(langs);
-      if (langs.length >= 2) {
-        setSourceLang(langs[0].lang);
-        setTargetLang(langs[1].lang);
-      } else if (langs.length === 1) {
-        setSourceLang(langs[0].lang);
+      if (langs.length) {
+        const defaults = getDefaultLangs(langs);
+        const source =
+          preferred?.source && langs.some((l) => l.lang === preferred.source)
+            ? preferred.source
+            : defaults.source;
+        const target =
+          preferred?.target && langs.some((l) => l.lang === preferred.target)
+            ? preferred.target
+            : defaults.target;
+        setSourceLang(source);
+        setTargetLang(target);
       }
     } catch {
       setError('Could not fetch languages. Check the URL and try again.');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleFetchLanguages() {
+    await fetchLanguagesForVideo(youtubeUrl);
+  }
+
+  function handleUseRecentYouTube(movie: RecentMovie) {
+    setYoutubeUrl(movie.videoUrl);
+    void fetchLanguagesForVideo(movie.videoUrl, {
+      source: movie.sourceLang,
+      target: movie.targetLang,
+    });
   }
 
   async function handleStartYouTube() {
@@ -66,6 +116,12 @@ export default function SetupForm({ onStart }: Props) {
         sourceLang,
         targetLang,
       });
+      void saveRecentMovieSelection({
+        source: 'youtube',
+        videoUrl: youtubeUrl,
+        sourceLang,
+        targetLang,
+      }).then(() => loadRecentMovies());
     } catch {
       setError('Failed to fetch captions.');
     } finally {
@@ -93,6 +149,15 @@ export default function SetupForm({ onStart }: Props) {
         sourceLang: 'source',
         targetLang: 'target',
       });
+      void saveRecentMovieSelection(
+        {
+          source: 'local',
+          videoUrl: localVideoFile.name,
+          sourceLang: 'source',
+          targetLang: 'target',
+        },
+        localVideoFile.name
+      ).then(() => loadRecentMovies());
     } catch {
       setError('Failed to parse subtitle files.');
     } finally {
@@ -138,6 +203,27 @@ export default function SetupForm({ onStart }: Props) {
 
       {tab === 'youtube' ? (
         <div className="space-y-4">
+          {recentMovies.some((m) => m.source === 'youtube') && (
+            <div>
+              <p className="text-sm text-gray-300 mb-2">Recent movies</p>
+              <div className="flex flex-wrap gap-2">
+                {recentMovies
+                  .filter((m) => m.source === 'youtube')
+                  .slice(0, 5)
+                  .map((movie) => (
+                    <button
+                      key={movie.id}
+                      onClick={() => handleUseRecentYouTube(movie)}
+                      className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700"
+                      title={movie.videoUrl}
+                    >
+                      {movie.label || movie.videoUrl}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm text-gray-300 mb-1">
               YouTube URL
@@ -208,6 +294,22 @@ export default function SetupForm({ onStart }: Props) {
         </div>
       ) : (
         <div className="space-y-4">
+          {recentMovies.some((m) => m.source === 'local') && (
+            <div className="rounded-lg border border-gray-800 p-3">
+              <p className="text-sm text-gray-300 mb-2">Recent local selections</p>
+              <div className="space-y-1">
+                {recentMovies
+                  .filter((m) => m.source === 'local')
+                  .slice(0, 3)
+                  .map((movie) => (
+                    <p key={movie.id} className="text-xs text-gray-400">
+                      {movie.label || movie.videoUrl}
+                    </p>
+                  ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm text-gray-300 mb-1">
               Video File

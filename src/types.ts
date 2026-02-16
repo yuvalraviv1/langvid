@@ -15,6 +15,16 @@ export interface SavedItem {
   createdAt: number;
 }
 
+export interface RecentMovie {
+  id: number;
+  source: 'youtube' | 'local';
+  videoUrl: string;
+  sourceLang: string;
+  targetLang: string;
+  label: string;
+  selectedAt: number;
+}
+
 export interface VideoConfig {
   source: 'youtube' | 'local';
   videoUrl: string;

@@ -13,7 +13,17 @@ function App() {
   const [savedCount, setSavedCount] = useState(0);
 
   useEffect(() => {
-    setSavedCount(getSavedItems().length);
+    let isMounted = true;
+    void getSavedItems()
+      .then((items) => {
+        if (isMounted) setSavedCount(items.length);
+      })
+      .catch(() => {
+        if (isMounted) setSavedCount(0);
+      });
+    return () => {
+      isMounted = false;
+    };
   }, [page]);
 
   function handleStart(config: VideoConfig) {

@@ -7,12 +7,23 @@ export default function ReviewPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
 
   useEffect(() => {
-    setItems(getSavedItems());
+    let isMounted = true;
+    void getSavedItems()
+      .then((savedItems) => {
+        if (isMounted) setItems(savedItems);
+      })
+      .catch(() => {
+        if (isMounted) setItems([]);
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   function handleDelete(id: string) {
-    deleteItem(id);
-    setItems((prev) => prev.filter((item) => item.id !== id));
+    void deleteItem(id).then(() => {
+      setItems((prev) => prev.filter((item) => item.id !== id));
+    });
   }
 
   if (items.length === 0) {

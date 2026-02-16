@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local SQLite data + macOS sidecar files
+server/langvid.sqlite
+server/langvid.sqlite-*
+._*
+**/._*
