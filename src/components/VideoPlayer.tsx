@@ -2,50 +2,106 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import ReactPlayer from 'react-player';
 
 interface Props {
+  source: 'youtube' | 'local';
   url: string;
   onTimeUpdate: (time: number) => void;
   seekTo?: number | null;
   onReady?: () => void;
 }
 
-export default function VideoPlayer({ url, onTimeUpdate, seekTo, onReady }: Props) {
+export default function VideoPlayer({ source, url, onTimeUpdate, seekTo, onReady }: Props) {
   const playerRef = useRef<ReactPlayer>(null!);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
   const intervalRef = useRef<number>(0);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
 
   const handleReady = useCallback(() => {
     onReady?.();
   }, [onReady]);
 
   useEffect(() => {
-    // Poll current time while playing
-    intervalRef.current = window.setInterval(() => {
-      if (playerRef.current) {
-        onTimeUpdate(playerRef.current.getCurrentTime());
-      }
-    }, 100);
-    return () => clearInterval(intervalRef.current);
+    onTimeUpdateRef.current = onTimeUpdate;
   }, [onTimeUpdate]);
 
   useEffect(() => {
-    if (seekTo != null && playerRef.current) {
+    if (!playing) return;
+
+    // Poll current time for subtitle sync on both playback paths.
+    const tick = () => {
+      if (source === 'local') {
+        const localVideo = localVideoRef.current;
+        if (localVideo) {
+          onTimeUpdateRef.current(localVideo.currentTime);
+        }
+        return;
+      }
+      if (playerRef.current) {
+        onTimeUpdateRef.current(playerRef.current.getCurrentTime());
+      }
+    };
+
+    tick();
+    intervalRef.current = window.setInterval(tick, 100);
+
+    return () => clearInterval(intervalRef.current);
+  }, [source, playing]);
+
+  useEffect(() => {
+    if (seekTo == null) return;
+    if (source === 'local') {
+      if (localVideoRef.current) {
+        localVideoRef.current.currentTime = seekTo;
+      }
+      return;
+    }
+    if (playerRef.current) {
       playerRef.current.seekTo(seekTo, 'seconds');
     }
-  }, [seekTo]);
+  }, [seekTo, source]);
+
+  useEffect(() => {
+    if (source !== 'local') return;
+    const localVideo = localVideoRef.current;
+    if (!localVideo) return;
+    if (playing) {
+      void localVideo.play().catch(() => {
+        // Ignore autoplay promise rejection.
+      });
+      return;
+    }
+    localVideo.pause();
+  }, [playing, source, url]);
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
-      <ReactPlayer
-        ref={playerRef}
-        url={url}
-        playing={playing}
-        controls
-        width="100%"
-        height="100%"
-        onReady={handleReady}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-      />
+      {source === 'local' ? (
+        <video
+          ref={localVideoRef}
+          src={url}
+          controls
+          autoPlay
+          playsInline
+          preload="auto"
+          className="w-full h-full"
+          onLoadedMetadata={handleReady}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+        />
+      ) : (
+        <ReactPlayer
+          ref={playerRef}
+          url={url}
+          playing={playing}
+          stopOnUnmount
+          controls
+          width="100%"
+          height="100%"
+          onReady={handleReady}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+        />
+      )}
     </div>
   );
 }

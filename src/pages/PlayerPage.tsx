@@ -36,7 +36,12 @@ export default function PlayerPage({ config, onBack }: Props) {
       </div>
 
       <div className="relative">
-        <VideoPlayer url={config.videoUrl} onTimeUpdate={handleTimeUpdate} />
+        <VideoPlayer
+          key={`${config.source}:${config.videoUrl}`}
+          source={config.source}
+          url={config.videoUrl}
+          onTimeUpdate={handleTimeUpdate}
+        />
         <SubtitleOverlay
           currentTime={currentTime}
           sourceCues={config.sourceLangCues}
