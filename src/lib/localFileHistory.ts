@@ -85,12 +85,9 @@ export async function loadLocalSelectionFiles(
   const record = await getRecord(key);
   if (!record) return null;
 
-  const hasPermission = await Promise.all([
-    ensureReadPermission(record.video),
-    ensureReadPermission(record.sourceSrt),
-    ensureReadPermission(record.targetSrt),
-  ]);
-  if (hasPermission.some((value) => !value)) return null;
+  if (!(await ensureReadPermission(record.video))) return null;
+  if (!(await ensureReadPermission(record.sourceSrt))) return null;
+  if (!(await ensureReadPermission(record.targetSrt))) return null;
 
   try {
     const [videoFile, sourceSrtFile, targetSrtFile] = await Promise.all([
