@@ -6,15 +6,18 @@ import SubtitleOverlay from '../components/SubtitleOverlay';
 interface Props {
   config: VideoConfig;
   onBack: () => void;
+  initialTime?: number;
+  onTimeUpdate?: (time: number) => void;
 }
 
-export default function PlayerPage({ config, onBack }: Props) {
+export default function PlayerPage({ config, onBack, initialTime, onTimeUpdate }: Props) {
   const [currentTime, setCurrentTime] = useState(0);
   const [toast, setToast] = useState('');
 
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
-  }, []);
+    onTimeUpdate?.(time);
+  }, [onTimeUpdate]);
 
   function handleSaved() {
     setToast('Saved!');
@@ -41,12 +44,13 @@ export default function PlayerPage({ config, onBack }: Props) {
           source={config.source}
           url={config.videoUrl}
           onTimeUpdate={handleTimeUpdate}
+          initialTime={initialTime}
         />
         <SubtitleOverlay
           currentTime={currentTime}
           sourceCues={config.sourceLangCues}
           targetCues={config.targetLangCues}
-          videoSource={config.videoUrl}
+          videoSource={config.reviewVideoSource}
           onSaved={handleSaved}
         />
       </div>

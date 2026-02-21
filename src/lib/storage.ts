@@ -50,3 +50,9 @@ export async function saveRecentMovieSelection(
     }),
   });
 }
+
+export async function deleteRecentMovieSelection(id: number): Promise<void> {
+  await fetchJson<{ ok: boolean }>(`/api/history/movies/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+  });
+}

@@ -131,6 +131,11 @@ const upsertRecentMovieStatement = db.prepare(`
     selected_at = excluded.selected_at
 `);
 
+const deleteRecentMovieStatement = db.prepare(`
+  DELETE FROM recent_movies
+  WHERE id = ?
+`);
+
 export function listSavedWords(): SavedWordRecord[] {
   return listWordsStatement.all() as SavedWordRecord[];
 }
@@ -166,4 +171,8 @@ export function saveRecentMovie(movie: RecentMovieInput): void {
     movie.label || '',
     Date.now()
   );
+}
+
+export function deleteRecentMovie(id: number): void {
+  deleteRecentMovieStatement.run(id);
 }

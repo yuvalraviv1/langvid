@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  deleteRecentMovie,
   deleteWord,
   listRecentMovies,
   listSavedWords,
@@ -227,6 +228,18 @@ app.post('/api/history/movies', (req, res) => {
   });
 
   res.status(201).json({ ok: true });
+});
+
+app.delete('/api/history/movies/:id', (req, res) => {
+  const rawId = req.params.id;
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'id must be a positive integer' });
+    return;
+  }
+
+  deleteRecentMovie(id);
+  res.json({ ok: true });
 });
 
 // GET /api/captions/languages?videoId=...

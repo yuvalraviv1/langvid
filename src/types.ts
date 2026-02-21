@@ -28,6 +28,7 @@ export interface RecentMovie {
 export interface VideoConfig {
   source: 'youtube' | 'local';
   videoUrl: string;
+  reviewVideoSource: string;
   sourceLangCues: SubtitleCue[];
   targetLangCues: SubtitleCue[];
   sourceLang: string;

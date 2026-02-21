@@ -7,9 +7,10 @@ interface Props {
   onTimeUpdate: (time: number) => void;
   seekTo?: number | null;
   onReady?: () => void;
+  initialTime?: number;
 }
 
-export default function VideoPlayer({ source, url, onTimeUpdate, seekTo, onReady }: Props) {
+export default function VideoPlayer({ source, url, onTimeUpdate, seekTo, onReady, initialTime }: Props) {
   const playerRef = useRef<ReactPlayer>(null!);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
@@ -17,8 +18,15 @@ export default function VideoPlayer({ source, url, onTimeUpdate, seekTo, onReady
   const onTimeUpdateRef = useRef(onTimeUpdate);
 
   const handleReady = useCallback(() => {
+    if (initialTime != null && initialTime > 0) {
+      if (source === 'local') {
+        if (localVideoRef.current) localVideoRef.current.currentTime = initialTime;
+      } else {
+        playerRef.current?.seekTo(initialTime, 'seconds');
+      }
+    }
     onReady?.();
-  }, [onReady]);
+  }, [onReady, initialTime, source]);
 
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;

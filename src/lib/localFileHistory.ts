@@ -13,6 +13,7 @@ interface LocalSelectionFiles {
 const DB_NAME = 'langvid-local-history';
 const DB_VERSION = 1;
 const STORE_NAME = 'local-selections';
+const LOCAL_VIDEO_SOURCE_PREFIX = 'local://';
 
 export function supportsLocalFileHistory(): boolean {
   return (
@@ -20,6 +21,21 @@ export function supportsLocalFileHistory(): boolean {
     'showOpenFilePicker' in window &&
     typeof indexedDB !== 'undefined'
   );
+}
+
+export function toLocalVideoSource(key: string): string {
+  return `${LOCAL_VIDEO_SOURCE_PREFIX}${encodeURIComponent(key)}`;
+}
+
+export function parseLocalVideoSource(source: string): string | null {
+  if (!source.startsWith(LOCAL_VIDEO_SOURCE_PREFIX)) return null;
+  const encodedKey = source.slice(LOCAL_VIDEO_SOURCE_PREFIX.length);
+  if (!encodedKey) return null;
+  try {
+    return decodeURIComponent(encodedKey);
+  } catch {
+    return null;
+  }
 }
 
 async function openDb(): Promise<IDBDatabase> {
@@ -96,6 +112,21 @@ export async function loadLocalSelectionFiles(
       record.targetSrt.getFile(),
     ]);
     return { videoFile, sourceSrtFile, targetSrtFile };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadLocalVideoFile(key: string): Promise<File | null> {
+  if (!supportsLocalFileHistory()) return null;
+  const record = await getRecord(key);
+  if (!record) return null;
+
+  const hasPermission = await ensureReadPermission(record.video);
+  if (!hasPermission) return null;
+
+  try {
+    return await record.video.getFile();
   } catch {
     return null;
   }

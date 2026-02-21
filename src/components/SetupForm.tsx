@@ -2,11 +2,16 @@ import { useEffect, useState } from 'react';
 import type { VideoConfig, SubtitleCue, RecentMovie } from '../types';
 import { fetchAvailableLanguages, fetchCaptions } from '../lib/captionApi';
 import { parseSRT } from '../lib/srtParser';
-import { getRecentMovies, saveRecentMovieSelection } from '../lib/storage';
+import {
+  deleteRecentMovieSelection,
+  getRecentMovies,
+  saveRecentMovieSelection,
+} from '../lib/storage';
 import {
   loadLocalSelectionFiles,
   pickSubtitleFile,
   pickVideoFile,
+  toLocalVideoSource,
   saveLocalSelection,
   supportsLocalFileHistory,
 } from '../lib/localFileHistory';
@@ -36,6 +41,7 @@ export default function SetupForm({ onStart }: Props) {
   const [targetLang, setTargetLang] = useState('');
   const [recentMovies, setRecentMovies] = useState<RecentMovie[]>([]);
   const [loading, setLoading] = useState(false);
+  const [deletingMovieId, setDeletingMovieId] = useState<number | null>(null);
   const [error, setError] = useState('');
 
   // Local file state
@@ -114,6 +120,39 @@ export default function SetupForm({ onStart }: Props) {
     });
   }
 
+  function getMovieLabel(movie: RecentMovie): string {
+    return movie.label || movie.videoUrl;
+  }
+
+  async function handleDeleteRecentMovie(movie: RecentMovie) {
+    const idsToDelete =
+      movie.source === 'local'
+        ? recentMovies
+            .filter((m) => m.source === 'local' && getMovieLabel(m) === getMovieLabel(movie))
+            .map((m) => m.id)
+        : [movie.id];
+
+    setDeletingMovieId(movie.id);
+    setError('');
+    try {
+      const results = await Promise.allSettled(
+        idsToDelete.map((id) => deleteRecentMovieSelection(id))
+      );
+      const failed = results.some((result) => result.status === 'rejected');
+      const deletedIds = idsToDelete.filter((_, index) => results[index].status === 'fulfilled');
+      if (deletedIds.length > 0) {
+        setRecentMovies((prev) => prev.filter((m) => !deletedIds.includes(m.id)));
+      }
+      if (failed) {
+        setError('Some history items could not be deleted.');
+      }
+    } catch {
+      setError('Failed to delete this history item.');
+    } finally {
+      setDeletingMovieId(null);
+    }
+  }
+
   async function handleStartYouTube() {
     if (!sourceLang || !targetLang) return;
     setLoading(true);
@@ -126,6 +165,7 @@ export default function SetupForm({ onStart }: Props) {
       onStart({
         source: 'youtube',
         videoUrl: youtubeUrl,
+        reviewVideoSource: youtubeUrl,
         sourceLangCues: sourceCues,
         targetLangCues: targetCues,
         sourceLang,
@@ -153,6 +193,7 @@ export default function SetupForm({ onStart }: Props) {
   }
 
   async function buildLocalConfig(
+    historyKey: string,
     videoFile: File,
     sourceSubtitlesFile: File,
     targetSubtitlesFile: File
@@ -167,6 +208,7 @@ export default function SetupForm({ onStart }: Props) {
     return {
       source: 'local',
       videoUrl,
+      reviewVideoSource: toLocalVideoSource(historyKey),
       sourceLangCues: sourceCues,
       targetLangCues: targetCues,
       sourceLang: 'source',
@@ -204,7 +246,12 @@ export default function SetupForm({ onStart }: Props) {
     setError('');
     try {
       const historyKey = localVideoFile.name;
-      const config = await buildLocalConfig(localVideoFile, sourceSrtFile, targetSrtFile);
+      const config = await buildLocalConfig(
+        historyKey,
+        localVideoFile,
+        sourceSrtFile,
+        targetSrtFile
+      );
       cacheLocalConfig(historyKey, config);
       onStart(config);
 
@@ -257,7 +304,12 @@ export default function SetupForm({ onStart }: Props) {
         return;
       }
 
-      const config = await buildLocalConfig(files.videoFile, files.sourceSrtFile, files.targetSrtFile);
+      const config = await buildLocalConfig(
+        movie.videoUrl,
+        files.videoFile,
+        files.sourceSrtFile,
+        files.targetSrtFile
+      );
       cacheLocalConfig(movie.videoUrl, config);
       onStart(config);
     } catch {
@@ -312,16 +364,39 @@ export default function SetupForm({ onStart }: Props) {
                 {recentMovies
                   .filter((m) => m.source === 'youtube')
                   .slice(0, 5)
-                  .map((movie) => (
-                    <button
-                      key={movie.id}
-                      onClick={() => handleUseRecentYouTube(movie)}
-                      className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700"
-                      title={movie.videoUrl}
-                    >
-                      {movie.label || movie.videoUrl}
-                    </button>
-                  ))}
+                  .map((movie) => {
+                    const label = movie.label || movie.videoUrl;
+                    const isDeleting = deletingMovieId === movie.id;
+                    return (
+                      <div
+                        key={movie.id}
+                        className="flex items-center rounded bg-gray-800 border border-gray-700 overflow-hidden"
+                        title={label}
+                      >
+                        <button
+                          onClick={() => handleUseRecentYouTube(movie)}
+                          disabled={loading || isDeleting}
+                          className="text-xs px-2 py-1 text-gray-200 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {label}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleDeleteRecentMovie(movie);
+                          }}
+                          disabled={isDeleting}
+                          className="text-xs px-2 py-1 text-gray-400 border-l border-gray-700 hover:bg-red-900/50 hover:text-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          aria-label={`Remove ${label} from history`}
+                          title={`Remove ${label} from history`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}
@@ -405,18 +480,37 @@ export default function SetupForm({ onStart }: Props) {
                   .slice(0, 3)
                   .map((movie) => {
                     const label = movie.label || movie.videoUrl;
+                    const isDeleting = deletingMovieId === movie.id;
                     return (
-                      <button
+                      <div
                         key={movie.id}
-                        onClick={() => {
-                          void handleUseRecentLocal(movie);
-                        }}
-                        disabled={loading}
-                        className="block w-full text-left text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex items-center rounded bg-gray-800 border border-gray-700 overflow-hidden"
                         title={label}
                       >
-                        {label}
-                      </button>
+                        <button
+                          onClick={() => {
+                            void handleUseRecentLocal(movie);
+                          }}
+                          disabled={loading || isDeleting}
+                          className="block flex-1 text-left text-xs px-2 py-1 text-gray-200 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {label}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleDeleteRecentMovie(movie);
+                          }}
+                          disabled={isDeleting}
+                          className="text-xs px-2 py-1 text-gray-400 border-l border-gray-700 hover:bg-red-900/50 hover:text-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          aria-label={`Remove ${label} from history`}
+                          title={`Remove ${label} from history`}
+                        >
+                          ×
+                        </button>
+                      </div>
                     );
                   })}
               </div>
